@@ -1,7 +1,11 @@
 # Open DeepSeek Harness web UI (starts it under pm2 if not running)
-#   open-dsh.ps1                          -> default browser
+#   open-dsh.ps1                            -> default browser
 #   open-dsh.ps1 -ChromeProfile "Profile 1" -> that Chrome profile ("Default", "Profile 1", "Profile 2")
-#   open-dsh.ps1 -AllChromeProfiles       -> every Chrome profile (each profile has its own cookie)
+#   open-dsh.ps1 -AllChromeProfiles         -> every Chrome profile (each profile has its own cookie)
+#
+# URL is http://localhost (no port) when the port 80 -> 47831 portproxy exists, else http://127.0.0.1:47831.
+# Only localhost / 127.x / [::1] are treated as "this machine" by dsh; any other hostname loses the
+# host settings pages (Shell, Agent loop, Subagent, Web search) and does not persist host settings.
 param(
     [string]$ChromeProfile,
     [switch]$AllChromeProfiles
@@ -15,9 +19,9 @@ if (-not $running) {
 }
 $url = Get-Content $log -ErrorAction SilentlyContinue | Where-Object { $_ -match 'dsh web: (http\S+)' } | Select-Object -Last 1 | ForEach-Object { $Matches[1] }
 if (-not $url) { Write-Host "Chua thay URL trong $log"; return }
-# Use the friendly domain when it resolves via the hosts file (port 80 -> 47831 via portproxy)
-$hosted = Select-String -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Pattern 'deepseek\.harness\.local' -Quiet
-if ($hosted) { $url = $url -replace '127\.0\.0\.1:47831', 'deepseek.harness.local' }
+# Drop the port when the portproxy exists
+$proxied = (netsh interface portproxy show v4tov4) -match '127\.0\.0\.1\s+80\s+127\.0\.0\.1\s+47831'
+if ($proxied) { $url = $url -replace '127\.0\.0\.1:47831', 'localhost' }
 
 $chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 if ($AllChromeProfiles) {

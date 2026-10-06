@@ -1,15 +1,15 @@
 # deepseek-harness-setup
 
-Cài và chạy [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`, gói npm `@deepseek-ai/dsh`) như một dịch vụ nền: chạy dưới pm2, cổng cố định, truy cập bằng domain `deepseek.harness.local`.
+Cài và chạy [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`, gói npm `@deepseek-ai/dsh`) như một dịch vụ nền: chạy dưới pm2, cổng cố định, truy cập bằng `http://localhost`.
 
 Bản này mới có phần **Windows**. Thư mục `linux/` để trống, chưa làm.
 
 ```
 windows/
-  ecosystem.config.js     pm2 app: node.exe bin.js web --no-open --port 47831 + trusted-host
-  open-dsh.ps1            bật dsh nếu chưa chạy, lấy link token mới nhất rồi mở trình duyệt
-  setup-domain-admin.ps1  (cần admin) hosts: deepseek.harness.local, portproxy 80 -> 47831
-linux/                    trống
+  ecosystem.config.js        pm2 app: node.exe bin.js web --no-open --port 47831
+  open-dsh.ps1               bật dsh nếu chưa chạy, lấy link token mới nhất rồi mở trình duyệt
+  setup-portproxy-admin.ps1  (cần admin) portproxy 127.0.0.1:80 -> 47831
+linux/                       trống
 ```
 
 ## Windows
@@ -53,26 +53,21 @@ $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnB
 Register-ScheduledTask -TaskName "pm2-resurrect" -Action $act -Trigger $trg -Settings $set -Force
 ```
 
-### 5. Domain `deepseek.harness.local` (cần admin)
+### 5. Gõ `http://localhost` không cần số cổng (cần admin, tùy chọn)
 
 Chạy trong PowerShell **Run as administrator**:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.dsh-pm2\setup-domain-admin.ps1
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.dsh-pm2\setup-portproxy-admin.ps1
 ```
 
-Việc nó làm:
-
-- thêm `127.0.0.1 deepseek.harness.local` vào file hosts
-- `netsh interface portproxy` chuyển `127.0.0.1:80` sang `127.0.0.1:47831`, để gõ domain không cần số cổng
+`netsh interface portproxy` chuyển `127.0.0.1:80` sang `127.0.0.1:47831`. Không làm bước này thì dùng `http://127.0.0.1:47831`.
 
 Gỡ portproxy khi cần cổng 80 trên loopback:
 
 ```powershell
 netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=80
 ```
-
-`ecosystem.config.js` đã có sẵn `--trusted-host deepseek.harness.local` (có và không có cổng), nếu thiếu dsh sẽ từ chối Host lạ.
 
 ### 6. Mở web
 
@@ -84,10 +79,21 @@ netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=80
 
 Lần đầu vào, nhập API key DeepSeek ở **Settings > Models**.
 
+## Vì sao dùng `localhost`, không dùng domain tự đặt
+
+dsh chỉ coi `localhost`, `[::1]` và IPv4 dạng `127.x.x.x` là "máy của bạn" (`packages/client/connection/src/loopback-hostname.ts`). Với hostname khác, ví dụ `deepseek.harness.local` trỏ về 127.0.0.1 trong file hosts, trang chạy ở chế độ không phải loopback:
+
+- thiếu các trang cấu hình Host trong Plugins (Shell, Agent loop, Subagent, Web search): thấy 4 mục thay vì 8
+- cài đặt Host chỉ giữ tạm trong trình duyệt (chế độ `memory`), không lưu bền, kể cả API key
+
+`--trusted-host` chỉ cho `/api` qua hàng rào Host, không bật cờ loopback. Không có cấu hình nào đổi được điều này, chỉ có cách sửa code của dsh.
+
+Nếu trước đây bạn đã dùng bản setup cũ của repo này với `deepseek.harness.local`: chạy `setup-portproxy-admin.ps1` (nó xóa dòng hosts cũ), chép lại `ecosystem.config.js` rồi `pm2 restart dsh-web`.
+
 ## Về token đăng nhập
 
 - dsh sinh token ngẫu nhiên mỗi lần **khởi động** và không có tùy chọn đặt cố định. Đây là thiết kế bảo mật của dsh.
-- Trình duyệt vào bằng link có `?token=...` sẽ nhận cookie ký sẵn (`dsh-auth-<hash>`). Cookie được tách theo từng trình duyệt/profile và theo từng `host:port`, nên `deepseek.harness.local` và `deepseek.harness.local:47831` là hai phiên khác nhau.
+- Trình duyệt vào bằng link có `?token=...` sẽ nhận cookie ký sẵn (`dsh-auth-<hash>`). Cookie được tách theo từng trình duyệt/profile và theo từng `host:port`, nên `localhost` và `127.0.0.1:47831` là hai phiên khác nhau.
 - Sau khi dsh khởi động lại (reboot, `pm2 restart`), chạy lại `open-dsh.ps1` để lấy link mới. Xem link thủ công: `pm2 logs dsh-web --nostream`.
 - Đừng chia sẻ link có token.
 
